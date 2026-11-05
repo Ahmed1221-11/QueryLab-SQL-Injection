@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QueryLab | SQL Injection</title>
+<style>
+:root{font-family:Segoe UI,Arial,sans-serif;color:#edf1ff;background:#0b1020;color-scheme:dark}*{box-sizing:border-box}body{margin:0}main{max-width:1150px;margin:auto;padding:38px 24px}header{display:flex;justify-content:space-between;align-items:center}.brand{font-weight:800;font-size:22px;letter-spacing:-1px}.badge{font-size:12px;color:#a3b4ca;border:1px solid #344259;padding:8px 12px;border-radius:30px}.eyebrow{color:#8c9fff;letter-spacing:3px;font-size:12px;margin-top:45px}h1{font-size:clamp(30px,5vw,49px);letter-spacing:-2px;margin:12px 0}p{color:#a8b4cc;line-height:1.6}.intro{max-width:680px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:25px 0}.toolbar button{background:#202b46}.grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.card{background:#121c31;border:1px solid #2a3650;border-radius:18px;padding:26px}.tag{font-size:11px;letter-spacing:2px;font-weight:bold}.red{color:#ff9aab}.green{color:#75dfc0}h2{font-size:25px;margin:12px 0 7px}.card p{font-size:14px}label{display:block;color:#bcc6db;font-size:13px;margin-top:18px}input{display:block;width:100%;padding:12px;border:1px solid #3a4966;border-radius:9px;background:#0b1326;color:white;font:15px monospace;margin-top:8px}button{cursor:pointer;color:white;border:1px solid #45547a;border-radius:9px;padding:12px 16px;font-weight:600}button:hover{filter:brightness(1.17)}button:focus-visible{outline:3px solid #b3bfff}.submit{margin-top:20px;width:100%;background:#5167d8}.fixed .submit{background:#147a64}.result{margin-top:20px;min-height:46px;font-weight:650;line-height:1.5}.result small{display:block;font-weight:400;color:#bac7dc}details{border-top:1px solid #2a3650;padding-top:16px;margin-top:8px}summary{cursor:pointer;font-size:13px;color:#b4c0dc}pre{background:#0a1223;white-space:pre-wrap;overflow-wrap:anywhere;padding:15px;border-radius:9px;font:12px/1.7 Consolas,monospace}.note{margin-top:23px;padding:17px 21px;border-left:3px solid #8c9fff;background:#121a2e;color:#bdc8dd;font-size:14px;line-height:1.65}footer{font-size:12px;color:#8190ad;margin-top:25px}@media(max-width:750px){.grid{grid-template-columns:1fr}.card{padding:20px}}
+</style><main><header><div class="brand">Query<span style="color:#8c9fff">Lab.</span></div><div class="badge">ECE4113 · Local learning lab</div></header>
+<div class="eyebrow">ATTACK / UNDERSTAND / REPAIR</div><h1>One login. Two outcomes.</h1><p class="intro">Watch untrusted input change a database query. Then send the exact same input through a parameterized query and compare the result.</p>
+<div class="toolbar"><button onclick="preset('valid')">1 · Valid credentials</button><button onclick="preset('wrong')">2 · Wrong password</button><button onclick="preset('attack')">3 · Injection attempt</button><button onclick="compare()">Run both versions →</button><button onclick="reset()">Reset</button></div>
+<div class="grid" id="cards"></div>
+<div class="note"><b>Why this works:</b> in the vulnerable version, <code>admin' -- </code> closes the username string and comments out the password condition. In the fixed version, that entire input is a username value. No such user exists, so the login fails.</div>
+<footer>Fictional accounts · Loopback only · No real login session is created. Passwords are stored as plaintext only to isolate this SQL demonstration; real authentication also requires password hashing and other controls.</footer></main>
+<script>
+const cards=document.querySelector('#cards');
+for(const mode of ['vulnerable','fixed']){
+ const fixed=mode==='fixed';
+ cards.insertAdjacentHTML('beforeend',`<section class="card ${mode}"><div class="tag ${fixed?'green':'red'}">${fixed?'02 / PARAMETERIZED':'01 / STRING CONCATENATION'}</div><h2>${fixed?'Fixed login':'Vulnerable login'}</h2><p>${fixed?'Input stays data. The query structure stays intact.':'Input is inserted directly into the SQL statement.'}</p><form id="${mode}"><label for="${mode}-name">Username</label><input id="${mode}-name" name="username" autocomplete="off" maxlength="500" required><label for="${mode}-pass">Password (visible for this demo)</label><input id="${mode}-pass" name="password" autocomplete="off" maxlength="500" required><button class="submit">Test this login</button></form><div class="result" id="${mode}-result" role="status" aria-live="polite">Ready to test.</div><details open><summary>Inspect SQL & parameters</summary><pre id="${mode}-sql">Run a login to inspect the query.</pre></details></section>`);
+ document.getElementById(mode).addEventListener('submit',e=>{e.preventDefault();run(mode)});
+}
+function preset(type){
+ const values={valid:['admin','AdminDemo42!'],wrong:['admin','wrong-password'],attack:["admin' -- ",'wrong-password']}[type];
+ for(const mode of ['vulnerable','fixed']){const form=document.getElementById(mode);form.elements.username.value=values[0];form.elements.password.value=values[1];document.getElementById(mode+'-result').textContent='Inputs loaded. Run to test.';document.getElementById(mode+'-sql').textContent='Run a login to inspect the query.';}
+}
+async function run(mode){
+ const form=document.getElementById(mode), result=document.getElementById(mode+'-result'), sql=document.getElementById(mode+'-sql');
+ result.textContent='Checking…';result.style.color='';
+ try{
+ const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,username:form.elements.username.value,password:form.elements.password.value})});
+ if(!response.ok)throw new Error('Request rejected');
+ const data=await response.json();
+ result.textContent=data.error?'SQL ERROR — request failed':data.accepted?'ACCESS GRANTED':'ACCESS DENIED';
+ result.style.color=data.accepted?'#75dfc0':'#ff9aab';
+ if(data.user){const line=document.createElement('small');line.textContent='Matched account: '+data.user.name+' · '+data.user.role;result.append(line)}
+ sql.textContent=data.query+(data.parameters?'\n\nBound separately: '+JSON.stringify(data.parameters):'\n\nParameters: none (input interpolated)')+(data.error?'\n\nSQLite: '+data.error:'');
+ }catch(error){result.textContent='Cannot reach the lab. Keep app.py running and use http://127.0.0.1:8765.';sql.textContent='No result.'}
+}
+async function compare(){await Promise.all(['vulnerable','fixed'].map(run))}
+function reset(){preset('wrong');for(const mode of ['vulnerable','fixed']){document.getElementById(mode+'-result').textContent='Ready to test.';document.getElementById(mode+'-result').style.color=''}}
+preset('wrong');
+</script></html>
